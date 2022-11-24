@@ -1,0 +1,213 @@
+---
+title: "Midia_B"
+author: "A***_B****"
+date: "2022-11-21"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(psych)
+library(readr)
+library(car)
+library(ggplot2)
+library(dplyr)
+theme_set(theme_bw())
+```
+
+## Collecting the data
+
+Since every year students collect the same data, its quite convenient to have a function for merging all little datasets in one:
+
+```{r}
+merge_csv <- function(folder_path){
+  return(list.files(path = folder_path, pattern = "*.csv", full.names = TRUE)%>% read_csv %>% bind_rows())
+}
+```
+
+and use it like this:
+
+```{r, warning=FALSE}
+df <- merge_csv("/home/bananna/Downloads/Rproject1/Data")
+df
+```
+
+we can make it just in one row like this:
+
+```{r, warning = FALSE}
+#df <- list.files(path = "/home/bananna/Downloads/Rproject1/Data", pattern = "*.csv", full.names = TRUE)%>% read_csv %>% bind_rows()
+```
+
+datasets were not quite the same, but bind_rows() automatically changes them to an appropriate type of data. However, 'Sex' column stays numeric, while it should be factor. Also the name is too long to my taste, and it also has spaces, which is not cool. So we will change that column:
+
+```{r}
+df <- rename(df, Sex = 'Sex (1 – male, 2 – female, 3 – uvenil)')
+df <- mutate(df,Sex = factor(Sex))
+levels(df$Sex) <- c('Male', 'Female', 'Uvenile')
+```
+
+## EDA
+
+Outliers can be visualized with boxplots:
+```{r}
+boxplot(df)
+boxplot(df[,-(1:2)])
+```
+
+it seems like we have outliers everywhere. Maybe it's because that's not normal distribution what we have as a data.
+To notice the relationship of the data to each other let's look at all the possible plots:
+
+```{r}
+pairs(df) 
+```
+
+We can see that length and diameter are linearly correlated, and this seems logical. 
+Seems like all weights are linearly correlated too.
+But the age, or the rings amount, behaves strangely.
+Sex doesnt seem to be meaningful for now.
+
+## Hypothesis:
+
+1. Age doesnt really influence the size and the weight of midia afters some point. While the uvenile age it grows gradually, but then it can stop growing, for example, because of lack of food or high competition or smth else...
+
+2. Length and Diameters are highly correlated, it might be good to include only one factor in some model.
+
+3. Midias grow evenly: if the shell weights more, it means the visceral part weights more as well. 
+
+4. Sex (except of uvenile stage) doesnt mean much (we need some more tests about this).
+
+5. Midia stops growing in diameter after some point of gained weight. The only explanation of this - it grows in height. Also maybe the weight grows and sizes don't because of some parasites on the shell of old midias or pearls inside? :D
+
+#### Correlations
+
+We can perform a fast analises of correlations between variables. We have variable Rings which can be considered both as numeric and categorial one. also we have categorial Sex. We can perform Chi-test on Rings and Sex later, and ANOVA with sex and numeric variables.
+
+```{r}
+df2 <- df[,-2]
+corr.test(df2)
+```
+
+Chi-test on Rings and Sex shows a significant correlation:
+
+```{r, warning = FALSE}
+chisq.test(df$Sex, as.factor(df$Rings))
+```
+
+It means female midias live longer
+
+### Sex and Length
+
+Let's chech if Sex influences Length:
+
+```{r}
+plot(df$Sex,df$Length)
+lngth_sex_means <- c(mean(df[as.numeric(df$Sex)==1,]$Length, na.rm = T), mean(df[as.numeric(df$Sex)==2,]$Length, na.rm = T), mean(df[as.numeric(df$Sex)==3,]$Length, na.rm = T))
+lngth_sex_sds <- c(sd(df[as.numeric(df$Sex)==1,]$Length, na.rm = T), sd(df[as.numeric(df$Sex)==2,]$Length, na.rm = T), sd(df[as.numeric(df$Sex)==3,]$Length, na.rm = T))
+as.data.frame(lngth_sex_means, row.names = c('Male', 'Female', 'Uvenile'))
+as.data.frame(lngth_sex_sds, row.names = c('Male', 'Female', 'Uvenile'))
+
+summary(aov(df$Length ~ df$Sex)) # ANOVA analyses
+```
+
+So, as we can see, length, or size is different in m, f and u groups.
+
+### Height < 0.165
+
+```{r}
+length(which(df$Height<0.165))/length(df$Height)*100
+```
+
+So, approximately 71% of midias are smaller then 0.165. It means that (maybe) the most of them dyes before reaching the height maximum, and it can also mean that the most of them are uvenile. lets check:
+
+```{r}
+nrow(df[df$Sex=="Uvenile",])/nrow(df)*100 # percent(%) of Uvenile midias
+nrow(df[df$Sex=="Male",])/nrow(df)*100 # percent(%) of Male midias
+nrow(df[df$Sex=="Female",])/nrow(df)*100 # percent(%) of Female midias
+```
+One third of all midaias are uvenile, not 71%, so most of midias are just small (in height), but not necessarily uvenile. 
+
+### Length > 92%
+
+```{r}
+sort(df$Length)[round(92/100*length(df$Length))]
+```
+```{r}
+hist(df$Length)
+```
+
+We can asuume that most midias reach approximately 0.62 in Length and dont grow bigger. But thats not the maximum size. The distribution is not normal, that corfirms the previous acsessment:
+
+```{r}
+shapiro.test(df$Length)
+```
+
+### Standardized Length
+
+```{r}
+Length_z_scores <- scale(df$Length)
+summary(Length_z_scores)
+```
+
+### Diameter of 5 and 15 ring midias
+
+```{r}
+plot(df$Rings,df$Diameter)
+
+rings515 <- list(df[df$Rings==5,]$Diameter,df[df$Rings==15,]$Diameter)
+names(rings515) <- c("5 rings", "15 rings")
+boxplot(rings515, col = "#ffccc2", ylab = "Diameter (inches)", xlab = "Number of rings")
+
+t.test(df[df$Rings==15,]$Diameter, df[df$Rings==15,]$Diameter)
+
+```
+
+Conclusion:
+
+Midias with 15 rings are significantly bigger then midias with 5 rings. Its important to understand that after some age the diameter doest change the same (linear) way. 
+
+### Diameter and Whole weight
+
+Accordind to pearson test, Diameter and weight are correlated:
+
+```{r, warning=FALSE}
+cor.test(df$Diameter,df$Whole_weight)
+
+ggplot(df, aes(Diameter, Whole_weight, color = Sex))+
+  geom_point(size = 0.5)+
+  scale_fill_discrete(labels = c("Male", "Female","Uvenile"))
+
+ggplot(df, aes(Diameter, Whole_weight))+
+  geom_point(size = 0.5)+
+  geom_smooth()+
+  xlab("Diameter of shell (inches)") + ylab("Whole weight (ounces)")
+```
+
+But the relationship isn't linear, we cant make a simple liner model. Most probably it's cubic, considering the wariables' phisical meaning.
+
+## Hypothesis cheching:
+
+1. Age doesnt really influence the size and the weight of midia afters some point. While the uvenile age it grows gradually, but then it can stop growing, for example, because of lack of food or high competition or smth else... **CONFIRMED** (dotplot in 5 vs 15 ring midias)
+
+2. Length and Diameters are highly correlated, it might be good to include only one factor in some model. **CONFIRMED** (cor.test)
+
+3. Midias grow evenly: if the shell weights more, it means the visceral part weights more as well. **CONFIRMED** (0.91 correlation, cor.test)
+
+4. Sex (except of uvenile stage) doesnt mean much (we need some more tests about this). **CONFUSION** (Sex and Length section, sex and ring chi.test)
+
+5. Midia stops growing in diameter after some point of gained weight. The only explanation of this - it grows in height. Also maybe the weight grows and sizes don't because of some parasites on the shell of old midias or pearls inside? :D **FALSE** (analises below)
+
+```{r}
+df_z <- as.data.frame(sapply(df[,3:9], scale))
+mod_1 <- lm(Whole_weight ~ Height*Diameter*Length, df_z)
+summary(mod_1)
+```
+
+With this model we can predict Whole weight with height, diameter and length with a pretty high precision. Seems like theres no parasites or pearls((
+
+6. It might be possible to make a linear model that will predict if the midia is uvenile by it's size and(or) weight. Or it might even predict age (ring amount), but only below 10 rings, if midia is older, the model will make mistakes.
+
+### Notion
+
+It is confusing a bit, that the Sex variable kinda includes an age factor too, so mb it would be better to perform some of the previous tests without uvenile midias. Then sex won't correlate with some wariables.
